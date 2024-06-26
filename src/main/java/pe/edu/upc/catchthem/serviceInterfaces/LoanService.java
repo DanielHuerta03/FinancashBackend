@@ -9,5 +9,8 @@ public interface LoanService {
     Loan findById(Long id);
     List<Loan> findAll();
     List<Loan> findLoansWithoutSchedules();
+    void update(Loan loan);
+
+    List<Loan> findLoansByClientId(Long clientId);
 
 }

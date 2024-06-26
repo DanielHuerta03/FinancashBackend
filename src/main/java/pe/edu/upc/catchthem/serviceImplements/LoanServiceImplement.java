@@ -47,4 +47,14 @@ public class LoanServiceImplement  implements LoanService {
                 .collect(Collectors.toList());
     }
 
+    @Override
+    public void update(Loan loan) {
+        loanRepository.save(loan);
+    }
+
+    @Override
+    public List<Loan> findLoansByClientId(Long clientId) {
+        return loanRepository.findLoansByClientId(clientId);
+    }
+
 }

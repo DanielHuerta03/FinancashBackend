@@ -4,11 +4,15 @@ import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import pe.edu.upc.catchthem.dtos.ClienteDTO;
+import pe.edu.upc.catchthem.dtos.ContractDTO;
 import pe.edu.upc.catchthem.dtos.LoanDto;
 import pe.edu.upc.catchthem.dtos.ScheduleDTO;
+import pe.edu.upc.catchthem.entities.Cliente;
 import pe.edu.upc.catchthem.entities.Contract;
 import pe.edu.upc.catchthem.entities.Loan;
 import pe.edu.upc.catchthem.entities.Schedule;
+import pe.edu.upc.catchthem.serviceInterfaces.ClienteService;
 import pe.edu.upc.catchthem.serviceInterfaces.ContractService;
 import pe.edu.upc.catchthem.serviceInterfaces.LoanService;
 import pe.edu.upc.catchthem.serviceInterfaces.ScheduleService;
@@ -17,6 +21,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/Loan")
@@ -25,6 +30,8 @@ public class LoanController {
     private LoanService lS;
     @Autowired
     private ContractService cS;
+    @Autowired
+    private ClienteService cSS;
     @Autowired
     private ScheduleService scheduleService;
 
@@ -55,7 +62,7 @@ public class LoanController {
         long daysToTransfer = ChronoUnit.DAYS.between(today, nextPaymentDay);
 
         // N° días TEP
-        int daysTEP = 360;
+        int daysTEP = 30;
 
         // Calcular el valor futuro (S)
         double S = C * Math.pow(1 + TEP, (double) daysToTransfer / daysTEP);
@@ -88,6 +95,19 @@ public class LoanController {
 
         // Crear y guardar los schedules
         return createFrenchSchedules(loan, R, n);
+    }
+
+    @GetMapping("/verifyAndUpdateLoanStatus")
+    public void verifyAndUpdateLoanStatus() {
+        List<Loan> loans = lS.findAll();
+        for (Loan loan : loans) {
+            List<Schedule> schedules = scheduleService.findSchedulesByLoanId(loan.getId());
+            boolean allPaid = schedules.stream().allMatch(schedule -> !schedule.getStatus().equals("vencido") && !schedule.getStatus().equals("pendiente"));
+            if (allPaid) {
+                loan.setStatus("pagado");
+                lS.update(loan);
+            }
+        }
     }
 
     private LocalDate getNextPaymentDay(String paymentDay) {
@@ -143,4 +163,36 @@ public class LoanController {
     public List<Loan> getLoansWithoutSchedules() {
         return lS.findLoansWithoutSchedules();
     }
+
+    @GetMapping("/loansByClient/{clientId}")
+    public List<LoanDto> getLoansByClientId(@PathVariable Long clientId) {
+        List<Loan> loans = lS.findLoansByClientId(clientId);
+        ModelMapper modelMapper = new ModelMapper();
+        return loans.stream()
+                .map(loan -> modelMapper.map(loan, LoanDto.class))
+                .collect(Collectors.toList());
+    }
+
+    @GetMapping("/sumLoanAmountsByClient/{clientId}")
+    public double sumLoanAmountsByClientId(@PathVariable Long clientId) {
+        List<Loan> loans = lS.findLoansByClientId(clientId);
+        return loans.stream()
+                .filter(loan -> "pendiente".equalsIgnoreCase(loan.getStatus()))
+                .mapToDouble(Loan::getAmount)
+                .sum();
+    }
+
+    @GetMapping("/checkCreditLimit/{clientId}/{monto}")
+    public boolean checkCreditLimit(@PathVariable Long clientId, @PathVariable int monto) {
+        // Obtener los préstamos pendientes
+        double totalLoanAmount = sumLoanAmountsByClientId(clientId);
+
+        // Obtener el límite de crédito del cliente
+        Cliente cliente = cSS.listarId(clientId);
+        int creditLimit = cliente.getCreditLimit();
+
+        // Verificar si los créditos pendientes más el monto ingresado son menores al límite de crédito
+        return totalLoanAmount + monto <= creditLimit;
+    }
+
 }
